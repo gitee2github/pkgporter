@@ -1,0 +1,209 @@
+#!/usr/bin/python3
+"""
+This is a packager bot for different language, for examle: perl, python, ...
+"""
+#******************************************************************************
+# Copyright (c) Huawei Technologies Co., Ltd. 2020-2020. All rights reserved.
+# licensed under the Mulan PSL v2.
+# You can use this software according to the terms and conditions of the Mulan PSL v2.
+# You may obtain a copy of Mulan PSL v2 at:
+#     http://license.coscl.org.cn/MulanPSL2
+# THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR FIT FOR A PARTICULAR
+# PURPOSE.
+# See the Mulan PSL v2 for more details.
+# Author: Myeuler <myeuler @ 163 com>
+# Create: 2020-05-07
+# Description: This is a helper tools to build pkg for python, perl ....
+# ******************************************************************************/
+
+from pprint import pprint
+from os import path
+import json
+import sys
+import re
+import datetime
+import argparse
+import subprocess
+import os
+from pathlib import Path
+import queue
+
+
+
+def pkg_installed(pkg):
+    #ret = subprocess.call(["rpm", "-qi", pkg], stdout=subprocess.PIPE)
+    ret = subprocess.call(["rpm", "-qi", pkg])
+    if (ret == 0):
+        return True
+    
+    # try to install it
+    ret = subprocess.call(["yum", "install", "-y", pkg])
+    if (ret == 0):
+        return True
+
+    return False
+
+def circle_dep(pkg, prepare):
+    for ppg in prepare:
+        if (ppg == pkg):
+            return True
+    return False
+
+def issue_analysis(porter, prepare):
+    while (len(prepare) != 0):
+        pkg = prepare.pop(0)
+        deps = porter.get_requires(pkg)
+        if (len(deps) < 2):
+            continue
+        if (deps[1] == False):
+            print("Get module %s failed\n" % pkg)
+            return False
+        if (len(deps[0]) == 0):
+            ret = build_install_pkg(porter, pkg)
+            if (ret == False):
+                return False
+        else:
+            #
+            # push back to stack
+            #
+            prepare.insert(0, pkg)
+            for req in deps[0]:
+                if (circle_dep(req, prepare)):
+                    print("There is circle dependency")
+                    print(prepare)
+                    print(pkg)
+                    return False
+                else:
+                    prepare.insert(0, req)
+
+    return True
+
+        
+
+def do_prepare_job(porter, pkgs):
+    pkg_prepare = []
+
+    for pkg in pkgs:
+        pkg_prepare.append(pkg)
+
+    if (len(pkg_prepare) == 0):
+        return True
+
+    return issue_analysis(porter, pkg_prepare)
+
+def build_install_pkg(porter, pkg):
+    print("Build&Install : %s\n" % pkg)
+
+    return porter.do_bi_job(pkg)
+
+
+def get_deps(porter, proc):
+    needed = []
+
+    while (True):
+        line = proc.stdout.readline()
+        if not line:
+            break;
+        newpkg = porter.refine_pkg(str(line.strip().decode()))
+        #newpkg = do_pkg_check(str(line.strip().decode()))
+        if (pkg_installed(newpkg) == False):
+            needed.append(newpkg)
+
+    return (needed, True)
+
+
+class perlPorter:
+    def __init__(self):
+        return 
+
+    def refine_pkg(self, pkg):
+        if pkg == "perl":
+            return pkg
+        newpkg = "perl-" + pkg.replace("::", "-")
+        return newpkg
+
+
+    def get_requires(self, pkg):
+        proc = subprocess.Popen(["perlporter", "--requires", pkg], stdout=subprocess.PIPE)
+        needed, ret = get_deps(self, proc)
+        proc.stdout.close()
+        proc.wait()
+        return needed, ret
+
+    def do_bi_job(self, pkg):
+    #    ret = subprocess.call(["pyporter", "-B", bpkg], stdout=subprocess.PIPE)
+        ret = subprocess.call(["perlporter", "-b", "-i", pkg])
+        if (ret != 0):
+            print("    Build&Install package %s failed\n" % pkg)
+            return False
+        return True
+
+
+
+
+class pythonPorter:
+    def __init__(self):
+        return 
+
+    def refine_pkg(self, pkg):
+        """
+        For the reason that json file may have some misinfo, need to add a checklist 
+        to refine the package name
+        """
+        if (pkg == "python3-cython"):
+            pkg = "python3-Cython"
+        return pkg
+
+
+    def get_requires(self, pkg):
+        bpkg = pkg.replace("python3-", "")
+        proc = subprocess.Popen(["pyporter", "-R", bpkg], stdout=subprocess.PIPE)
+        needed, ret = get_deps(proc)
+        proc.stdout.close()
+        proc.wait()
+        return needed, ret
+    
+    def do_bi_job(self, pkg):
+        bpkg = pkg.replace("python3-", "")
+    #    ret = subprocess.call(["pyporter", "-B", bpkg], stdout=subprocess.PIPE)
+        ret = subprocess.call(["pyporter", "-B", bpkg])
+        if (ret != 0):
+            print("    Build&Install package %s failed\n" % pkg)
+            return False
+        return True
+
+
+def porter_creator(t_str):
+    if (t_str == "python"):
+        return pythonPorter()
+    elif (t_str == "perl"):
+        return perlPorter()
+
+    return None
+
+if __name__ == "__main__":
+    ret = True
+
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument("-t", "--type", help="Build module type : python, perl...", type=str, default="python")
+    parser.add_argument("pkg", type=str, help="The python module name")
+
+    args = parser.parse_args()
+
+    porter = porter_creator(args.type)
+    if (porter is None):
+        print("Type %s is not supported now\n" % args.type)
+        sys.exit(1)
+
+    reqs = porter.get_requires(args.pkg)
+    if (reqs[1] == False):
+        print("Get deps failed\n")
+        sys.exit(1)
+    if (len(reqs[0]) != 0):
+        ret = do_prepare_job(porter, reqs[0])
+    
+    if (ret == True):
+        build_install_pkg(porter, args.pkg)
+
