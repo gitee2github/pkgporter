@@ -33,7 +33,7 @@ import queue
 
 def mod_installed(mod):
     # try to use dnf to install mod directly
-    ret = subprocess.call(["dnf", "install", mod])
+    ret = subprocess.call(["dnf", "install", "-y", mod])
     if (ret == 0):
         return True
 
