@@ -248,5 +248,8 @@ if __name__ == "__main__":
         ret = do_prepare_job(porter, reqs[0])
     
     if (ret == True):
-        build_install_pkg(porter, args.pkg)
+        ret = build_install_pkg(porter, args.pkg)
+        if (ret == False):
+            sys.exit(1)
 
+    sys.exit(0)
