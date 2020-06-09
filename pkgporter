@@ -97,7 +97,6 @@ def build_install_pkg(porter, pkg):
 
     return porter.do_bi_job(pkg)
 
-
 def get_deps(porter, proc):
     needed = []
 
@@ -105,10 +104,15 @@ def get_deps(porter, proc):
         line = proc.stdout.readline()
         if not line:
             break;
-        newpkg = porter.refine_pkg(str(line.strip().decode()))
-        #newpkg = do_pkg_check(str(line.strip().decode()))
-        if (pkg_installed(newpkg) == False):
-            needed.append(newpkg)
+        #
+        # read from command get original module name, need to invoke
+        # refine_pkg function to convert those module name to package name.
+        # for example: Text-More --> perl-Test-More
+        #
+        mod = str(line.strip().decode())
+        pkg = porter.refine_pkg(mod)
+        if (pkg_installed(pkg) == False):
+            needed.append(mod)
 
     return (needed, True)
 
