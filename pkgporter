@@ -33,7 +33,7 @@ import queue
 
 def mod_installed(mod):
     # try to use dnf to install mod directly
-    ret = subprocess.call(["dnf", "install", "-y", mod])
+    ret = subprocess.call(["dnf", "install", mod])
     if (ret == 0):
         return True
 
@@ -61,6 +61,12 @@ def circle_dep(pkg, prepare):
 def issue_analysis(porter, prepare):
     while (len(prepare) != 0):
         pkg = prepare.pop(0)
+        #
+        # For the reason that there exists circle dependency, some packages may 
+        # be build & installed. check it after pop and abandon them if has installed
+        # 
+        if (has_installed(porter, pkg)):
+            continue
         deps = porter.get_requires(pkg)
         if (len(deps) < 2):
             continue
@@ -79,9 +85,14 @@ def issue_analysis(porter, prepare):
             for req in deps[0]:
                 if (circle_dep(req, prepare)):
                     print("There is circle dependency")
-                    print(prepare)
-                    print(pkg)
-                    return False
+                    #
+                    # Make a try to build req to break the circle. 
+                    #
+                    ret = build_install_pkg(porter, req); 
+                    if (ret == False):
+                        print(prepare)
+                        print(pkg)
+                        return False
                 else:
                     prepare.insert(0, req)
 
@@ -105,6 +116,13 @@ def build_install_pkg(porter, pkg):
 
     return porter.do_bi_job(pkg)
 
+def has_installed(porter, mod):
+    if (pkg_installed(porter.refine_pkg(mod)) == False) and (mod_installed(porter.refine_mod(mod)) == False):
+        return False
+
+    return True
+
+
 def get_deps(porter, proc):
     needed = []
 
@@ -118,8 +136,9 @@ def get_deps(porter, proc):
         # for example: Text-More --> perl-Test-More
         #
         mod = str(line.strip().decode())
-        pkg = porter.refine_pkg(mod)
-        if (pkg_installed(pkg) == False) and (mod_installed(porter.refine_mod(mod)) == False):
+        if (has_installed(porter, mod)):
+            continue
+        else:
             needed.append(mod)
 
     return (needed, True)
@@ -132,7 +151,7 @@ class perlPorter:
     def refine_mod(self, mod):
         if mod == "perl":
             return mod
-        newmod = "perl(" + mod + ")"
+        newmod = "perl(" + mod.replace("-", "::") + ")"
         return newmod
 
     def refine_pkg(self, pkg):
@@ -217,6 +236,9 @@ if __name__ == "__main__":
     if (porter is None):
         print("Type %s is not supported now\n" % args.type)
         sys.exit(1)
+
+    if (has_installed(porter, args.pkg)):
+        print("Package %s has been instaled\n" % args.pkg)
 
     reqs = porter.get_requires(args.pkg)
     if (reqs[1] == False):
