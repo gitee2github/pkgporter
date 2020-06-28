@@ -199,7 +199,7 @@ class pythonPorter:
     def get_requires(self, pkg):
         bpkg = pkg.replace("python3-", "")
         proc = subprocess.Popen(["pyporter", "-R", bpkg], stdout=subprocess.PIPE)
-        needed, ret = get_deps(proc)
+        needed, ret = get_deps(self, proc)
         proc.stdout.close()
         proc.wait()
         return needed, ret
@@ -228,7 +228,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
     parser.add_argument("-t", "--type", help="Build module type : python, perl...", type=str, default="python")
-    parser.add_argument("pkg", type=str, help="The python module name")
+    parser.add_argument("pkg", type=str, help="The python/perl... module name")
 
     args = parser.parse_args()
 
